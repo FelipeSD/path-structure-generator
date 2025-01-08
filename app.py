@@ -18,8 +18,11 @@ class DirectoryStructureApp:
         self.tree_frame = tk.Frame(self.root)
         self.tree_frame.pack(pady=10, fill=tk.BOTH, expand=True)
         
-        self.treeview = ttk.Treeview(self.tree_frame, columns=("Name"), selectmode="extended")
+        # Modified Treeview to include a checkbox column
+        self.treeview = ttk.Treeview(self.tree_frame, columns=("Checked"), selectmode="none")
         self.treeview.heading("#0", text="Name")
+        self.treeview.heading("Checked", text="")
+        self.treeview.column("Checked", width=10, anchor="center")
         self.treeview.column("#0", stretch=tk.YES)
         self.treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -38,8 +41,52 @@ class DirectoryStructureApp:
 
         self.selected_directory = None
         self.structure_text = None
-        self.selected_items = set()
-        self.path_to_id = {}  # New dictionary to store path-to-id mappings
+        self.path_to_id = {}  # Dictionary to store path-to-id mappings
+        self.id_to_path = {}  # New dictionary to store id-to-path mappings
+        
+        # Bind click event to handle checkboxes
+        self.treeview.tag_configure('checked', image='')
+        self.treeview.tag_configure('unchecked', image='')
+        self.treeview.bind('<Button-1>', self.toggle_check)
+
+    def toggle_check(self, event):
+        """Handles the checkbox toggle when clicking on an item"""
+        region = self.treeview.identify_region(event.x, event.y)
+        if region == "cell":
+            column = self.treeview.identify_column(event.x)
+            if column == "#1":  # Checkbox column
+                item = self.treeview.identify_row(event.y)
+                current_state = self.treeview.set(item, "Checked")
+                new_state = "☐" if current_state == "☑" else "☑"
+                self.treeview.set(item, "Checked", new_state)
+                
+                # Toggle all children
+                self.toggle_children(item, new_state)
+                # Update parent state
+                self.update_parent_state(self.treeview.parent(item))
+
+    def toggle_children(self, item, state):
+        """Recursively toggles all children of an item"""
+        children = self.treeview.get_children(item)
+        for child in children:
+            self.treeview.set(child, "Checked", state)
+            self.toggle_children(child, state)
+
+    def update_parent_state(self, parent):
+        """Updates parent checkbox based on children states"""
+        if parent:
+            children = self.treeview.get_children(parent)
+            child_states = [self.treeview.set(child, "Checked") for child in children]
+            
+            if all(state == "☑" for state in child_states):
+                self.treeview.set(parent, "Checked", "☑")
+            elif all(state == "☐" for state in child_states):
+                self.treeview.set(parent, "Checked", "☐")
+            else:
+                self.treeview.set(parent, "Checked", "☑")
+            
+            # Recursively update parent's parent
+            self.update_parent_state(self.treeview.parent(parent))
 
     def select_directory(self):
         """Allows the user to select a directory."""
@@ -54,66 +101,75 @@ class DirectoryStructureApp:
     def populate_treeview(self):
         """Populates the Treeview with the directory and file structure."""
         self.treeview.delete(*self.treeview.get_children())
-        self.path_to_id.clear()  # Clear the path mapping
+        self.path_to_id.clear()
+        self.id_to_path.clear()
         
         # Insert root directory first
         root_name = os.path.basename(self.selected_directory)
-        root_id = self.treeview.insert("", "end", text=root_name, open=True)
+        root_id = self.treeview.insert("", "end", text=root_name, open=True, values=("☐",))
         self.path_to_id[self.selected_directory] = root_id
+        self.id_to_path[root_id] = self.selected_directory
 
         # Walk through directory structure
         for root, dirs, files in os.walk(self.selected_directory):
-            # Skip the root directory as we've already added it
             if root == self.selected_directory:
                 continue
                 
-            # Get parent path and ID
             parent_path = os.path.dirname(root)
             parent_id = self.path_to_id.get(parent_path)
             
             if parent_id is not None:
-                # Insert directory
                 dir_name = os.path.basename(root)
-                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=True)
+                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=True, values=("☐",))
                 self.path_to_id[root] = dir_id
+                self.id_to_path[dir_id] = root
                 
-                # Insert files in current directory
                 for file in files:
-                    self.treeview.insert(dir_id, "end", text=file)
+                    file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
+                    file_path = os.path.join(root, file)
+                    self.id_to_path[file_id] = file_path
 
-    def create_nested_dict(self, path_parts):
-        """Creates a nested dictionary from a list of path parts."""
-        current = {}
-        temp = current
-        for part in path_parts[:-1]:
-            temp[part] = {}
-            temp = temp[part]
-        temp[path_parts[-1]] = None
-        return current
-
-    def merge_dicts(self, dict1, dict2):
-        """Recursively merges two nested dictionaries."""
-        for key in dict2:
-            if key in dict1:
-                if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
-                    self.merge_dicts(dict1[key], dict2[key])
-            else:
-                dict1[key] = dict2[key]
-        return dict1
+    def get_checked_items(self):
+        """Returns a list of checked items with their full paths"""
+        checked_items = []
+        def collect_checked(item):
+            if self.treeview.set(item, "Checked") == "☑":
+                full_path = self.id_to_path.get(item)
+                if full_path:
+                    checked_items.append(full_path)
+            for child in self.treeview.get_children(item):
+                collect_checked(child)
+        
+        for item in self.treeview.get_children():
+            collect_checked(item)
+        return checked_items
 
     def generate_structure(self):
         """Generates the formatted directory structure."""
-        self.selected_items = set(self.treeview.selection())
-        if not self.selected_items:
+        checked_paths = self.get_checked_items()
+        if not checked_paths:
             messagebox.showwarning("Warning", "No items were selected.")
             return
         
-        directory_tree = {}
-        for item in self.selected_items:
-            path = self.get_full_path(item)
-            parts = [p for p in path.split(os.sep) if p]  # Remove empty strings
-            nested_dict = self.create_nested_dict(parts)
-            directory_tree = self.merge_dicts(directory_tree, nested_dict)
+        # Criar a estrutura inicial com o diretório raiz
+        root_name = os.path.basename(self.selected_directory)
+        directory_tree = {root_name: {}}
+        
+        for path in checked_paths:
+            # Get the relative path from the selected directory
+            rel_path = os.path.relpath(path, self.selected_directory)
+            parts = rel_path.split(os.sep)
+            
+            # Create nested dictionary for this path, starting from the root
+            current = directory_tree[root_name]
+            for i, part in enumerate(parts):
+                if i == len(parts) - 1:  # Se for o último item
+                    if part not in current:
+                        current[part] = {}
+                else:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
         
         self.structure_text = self.format_structure(directory_tree)
         self.text_area.config(state=tk.NORMAL)
@@ -122,16 +178,7 @@ class DirectoryStructureApp:
         self.text_area.config(state=tk.DISABLED)
         self.save_button.config(state=tk.NORMAL)
 
-    def get_full_path(self, item):
-        """Returns the full path of the selected item in the Treeview."""
-        path = []
-        while item:
-            path.append(self.treeview.item(item, "text"))
-            item = self.treeview.parent(item)
-        return os.path.join(*reversed(path))
-
     def format_structure(self, tree, indent="", last=False):
-        """Converts the directory tree to text in the requested format."""
         result = ""
         keys = list(tree.keys())
         for i, key in enumerate(keys):
@@ -144,7 +191,6 @@ class DirectoryStructureApp:
         return result
 
     def save_structure(self):
-        """Saves the generated structure to a text file."""
         if not self.structure_text:
             messagebox.showerror("Error", "No structure generated to save.")
             return
