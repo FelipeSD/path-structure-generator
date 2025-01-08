@@ -5,21 +5,21 @@ from tkinter import filedialog, messagebox, ttk
 class DirectoryStructureApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gerador de Estrutura de Diretórios")
+        self.root.title("Directory Structure Generator")
         self.root.geometry("800x600")
 
-        # Widgets principais
-        self.dir_label = tk.Label(self.root, text="Nenhum diretório selecionado.", wraplength=700)
+        # Main widgets
+        self.dir_label = tk.Label(self.root, text="No directory selected.", wraplength=700)
         self.dir_label.pack(pady=10)
 
-        self.select_button = tk.Button(self.root, text="Selecionar Diretório", command=self.select_directory)
+        self.select_button = tk.Button(self.root, text="Select Directory", command=self.select_directory)
         self.select_button.pack(pady=5)
 
         self.tree_frame = tk.Frame(self.root)
         self.tree_frame.pack(pady=10, fill=tk.BOTH, expand=True)
         
         self.treeview = ttk.Treeview(self.tree_frame, columns=("Name"), selectmode="extended")
-        self.treeview.heading("#0", text="Nome")
+        self.treeview.heading("#0", text="Name")
         self.treeview.column("#0", stretch=tk.YES)
         self.treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -27,13 +27,13 @@ class DirectoryStructureApp:
         self.treeview.configure(yscroll=self.tree_scroll.set)
         self.tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.generate_button = tk.Button(self.root, text="Gerar Estrutura", command=self.generate_structure, state=tk.DISABLED)
+        self.generate_button = tk.Button(self.root, text="Generate Structure", command=self.generate_structure, state=tk.DISABLED)
         self.generate_button.pack(pady=5)
 
         self.text_area = tk.Text(self.root, wrap=tk.WORD, state=tk.DISABLED, height=15, width=70)
         self.text_area.pack(pady=10)
 
-        self.save_button = tk.Button(self.root, text="Salvar Estrutura", command=self.save_structure, state=tk.DISABLED)
+        self.save_button = tk.Button(self.root, text="Save Structure", command=self.save_structure, state=tk.DISABLED)
         self.save_button.pack(pady=5)
 
         self.selected_directory = None
@@ -42,17 +42,17 @@ class DirectoryStructureApp:
         self.path_to_id = {}  # New dictionary to store path-to-id mappings
 
     def select_directory(self):
-        """Permite ao usuário selecionar um diretório."""
+        """Allows the user to select a directory."""
         self.selected_directory = filedialog.askdirectory()
         if self.selected_directory:
-            self.dir_label.config(text=f"Diretório Selecionado: {self.selected_directory}")
+            self.dir_label.config(text=f"Selected Directory: {self.selected_directory}")
             self.populate_treeview()
             self.generate_button.config(state=tk.NORMAL)
         else:
-            messagebox.showwarning("Aviso", "Nenhum diretório foi selecionado.")
+            messagebox.showwarning("Warning", "No directory was selected.")
 
     def populate_treeview(self):
-        """Popula a Treeview com a estrutura de diretórios e arquivos."""
+        """Populates the Treeview with the directory and file structure."""
         self.treeview.delete(*self.treeview.get_children())
         self.path_to_id.clear()  # Clear the path mapping
         
@@ -82,7 +82,7 @@ class DirectoryStructureApp:
                     self.treeview.insert(dir_id, "end", text=file)
 
     def create_nested_dict(self, path_parts):
-        """Cria um dicionário aninhado a partir de uma lista de partes do caminho."""
+        """Creates a nested dictionary from a list of path parts."""
         current = {}
         temp = current
         for part in path_parts[:-1]:
@@ -92,7 +92,7 @@ class DirectoryStructureApp:
         return current
 
     def merge_dicts(self, dict1, dict2):
-        """Mescla dois dicionários aninhados recursivamente."""
+        """Recursively merges two nested dictionaries."""
         for key in dict2:
             if key in dict1:
                 if isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
@@ -102,10 +102,10 @@ class DirectoryStructureApp:
         return dict1
 
     def generate_structure(self):
-        """Gera a estrutura de diretórios formatada no estilo solicitado."""
+        """Generates the formatted directory structure."""
         self.selected_items = set(self.treeview.selection())
         if not self.selected_items:
-            messagebox.showwarning("Aviso", "Nenhum item foi selecionado.")
+            messagebox.showwarning("Warning", "No items were selected.")
             return
         
         directory_tree = {}
@@ -123,7 +123,7 @@ class DirectoryStructureApp:
         self.save_button.config(state=tk.NORMAL)
 
     def get_full_path(self, item):
-        """Retorna o caminho completo do item selecionado na Treeview."""
+        """Returns the full path of the selected item in the Treeview."""
         path = []
         while item:
             path.append(self.treeview.item(item, "text"))
@@ -131,7 +131,7 @@ class DirectoryStructureApp:
         return os.path.join(*reversed(path))
 
     def format_structure(self, tree, indent="", last=False):
-        """Converte a árvore de diretórios em texto no formato solicitado."""
+        """Converts the directory tree to text in the requested format."""
         result = ""
         keys = list(tree.keys())
         for i, key in enumerate(keys):
@@ -144,15 +144,15 @@ class DirectoryStructureApp:
         return result
 
     def save_structure(self):
-        """Salva a estrutura gerada em um arquivo de texto."""
+        """Saves the generated structure to a text file."""
         if not self.structure_text:
-            messagebox.showerror("Erro", "Nenhuma estrutura gerada para salvar.")
+            messagebox.showerror("Error", "No structure generated to save.")
             return
-        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Arquivos de Texto", "*.txt")])
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
         if file_path:
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(self.structure_text)
-            messagebox.showinfo("Sucesso", f"Estrutura salva em: {file_path}")
+            messagebox.showinfo("Success", f"Structure saved to: {file_path}")
 
 if __name__ == "__main__":
     root = tk.Tk()
