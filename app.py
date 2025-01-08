@@ -1,94 +1,82 @@
 import os
 import time
 import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-import tkinter.scrolledtext as scrolledtext
 from queue import Queue
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+    QHBoxLayout, QLabel, QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, 
+    QProgressBar, QTextEdit, QMessageBox, QFrame)
+from PyQt6.QtCore import Qt, QTimer
 
-class DirectoryStructureApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Directory Structure Generator")
-        self.root.geometry("800x600")
+class DirectoryStructureApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Directory Structure Generator")
+        self.resize(800, 600)
         
-        # Container principal
-        self.main_container = tk.Frame(self.root)
-        self.main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # Main widget and layout
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        self.main_layout = QVBoxLayout(main_widget)
         
-        # Frame superior
-        self.top_frame = tk.Frame(self.main_container)
-        self.top_frame.pack(fill=tk.X)
+        # Top frame
+        top_frame = QWidget()
+        top_layout = QHBoxLayout(top_frame)
+        self.dir_label = QLabel("No directory selected.")
+        self.dir_label.setWordWrap(True)
+        self.select_button = QPushButton("Select Directory")
+        self.select_button.clicked.connect(self.select_directory)
+        top_layout.addWidget(self.dir_label)
+        top_layout.addWidget(self.select_button)
+        self.main_layout.addWidget(top_frame)
         
-        self.dir_label = tk.Label(self.top_frame, text="No directory selected.", wraplength=700)
-        self.dir_label.pack(side=tk.LEFT, pady=5)
+        # Status frame
+        self.status_frame = QFrame()
+        status_layout = QVBoxLayout(self.status_frame)
+        self.progress_bar = QProgressBar()
+        self.status_label = QLabel()
+        status_layout.addWidget(self.progress_bar)
+        status_layout.addWidget(self.status_label)
+        self.main_layout.addWidget(self.status_frame)
+        self.status_frame.hide()
         
-        self.select_button = tk.Button(self.top_frame, text="Select Directory", command=self.select_directory)
-        self.select_button.pack(side=tk.RIGHT, pady=5)
+        # Tree widget
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Name", ""])
+        self.tree.header().setStretchLastSection(False)
+        self.tree.clicked.connect(self.toggle_check)
+        self.main_layout.addWidget(self.tree)
         
-        # Status frame com barra de progresso e label
-        self.status_frame = tk.Frame(self.main_container)
-        self.status_frame.pack(fill=tk.X, pady=5)
+        # Bottom frame
+        bottom_frame = QWidget()
+        bottom_layout = QVBoxLayout(bottom_frame)
+        self.generate_button = QPushButton("Generate Structure")
+        self.generate_button.clicked.connect(self.generate_structure)
+        self.text_area = QTextEdit()
+        self.text_area.setReadOnly(True)
+        self.save_button = QPushButton("Save Structure")
+        self.save_button.clicked.connect(self.save_structure)
+        self.save_button.setEnabled(False)
         
-        self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(self.status_frame, variable=self.progress_var, maximum=100)
-        self.progress_bar.pack(fill=tk.X, pady=5)
+        bottom_layout.addWidget(self.generate_button)
+        bottom_layout.addWidget(self.text_area)
+        bottom_layout.addWidget(self.save_button)
+        self.main_layout.addWidget(bottom_frame)
         
-        self.status_label = tk.Label(self.status_frame, text="")
-        self.status_label.pack(fill=tk.X)
-        
-        # Ocultar frame de status inicialmente
-        self.status_frame.pack_forget()
-        
-        # Frame da árvore
-        self.tree_frame = tk.Frame(self.main_container)
-        self.tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        self.treeview = ttk.Treeview(self.tree_frame, columns=("Checked"), selectmode="none")
-        self.treeview.heading("#0", text="Name")
-        self.treeview.heading("Checked", text="")
-        self.treeview.column("Checked", width=50, anchor="center")
-        self.treeview.column("#0", stretch=tk.YES)
-        
-        self.tree_scroll = ttk.Scrollbar(self.tree_frame, orient="vertical", command=self.treeview.yview)
-        self.treeview.configure(yscroll=self.tree_scroll.set)
-        
-        self.treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Frame inferior
-        self.bottom_frame = tk.Frame(self.main_container)
-        self.bottom_frame.pack(fill=tk.X, pady=5)
-        
-        self.generate_button = tk.Button(self.bottom_frame, text="Generate Structure", 
-                                       command=self.generate_structure, state=tk.NORMAL)
-        self.generate_button.pack(pady=5)
-        
-        self.text_area = tk.Text(self.bottom_frame, wrap=tk.WORD, state=tk.DISABLED, height=15)
-        self.text_area.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        self.save_button = tk.Button(self.bottom_frame, text="Save Structure", 
-                                   command=self.save_structure, state=tk.DISABLED)
-        self.save_button.pack(pady=5)
-        
+        # Initialize variables
         self.selected_directory = None
         self.structure_text = None
-        self.path_to_id = {}
-        self.id_to_path = {}
+        self.path_to_item = {}
+        self.item_to_path = {}
         self.total_items = 0
         self.processed_items = 0
-        
-        self.treeview.tag_configure('checked', image='')
-        self.treeview.tag_configure('unchecked', image='')
-        self.treeview.bind('<Button-1>', self.toggle_check)
-        
         self.queue = Queue()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.process_queue)
 
     def update_progress(self, value, status_text=""):
-        self.progress_var.set(value)
+        self.progress_bar.setValue(int(value))
         if status_text:
-            self.status_label.config(text=status_text)
-        self.root.update_idletasks()
+            self.status_label.setText(status_text)
 
     def count_items(self, directory):
         total = 0
@@ -102,29 +90,32 @@ class DirectoryStructureApp:
         self.queue.put(('status', f"Found {self.total_items} items to process"))
         
         root_name = os.path.basename(self.selected_directory)
-        root_id = self.treeview.insert("", "end", text=root_name, open=False, values=("☐",))
-        self.path_to_id[self.selected_directory] = root_id
-        self.id_to_path[root_id] = self.selected_directory
+        root_item = QTreeWidgetItem([root_name, "☐"])
+        self.tree.addTopLevelItem(root_item)
+        self.path_to_item[self.selected_directory] = root_item
+        self.item_to_path[root_item] = self.selected_directory
 
         for root, dirs, files in os.walk(self.selected_directory):
             if root == self.selected_directory:
                 continue
                 
             parent_path = os.path.dirname(root)
-            parent_id = self.path_to_id.get(parent_path)
+            parent_item = self.path_to_item.get(parent_path)
             
-            if parent_id is not None:
+            if parent_item is not None:
                 dir_name = os.path.basename(root)
-                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=False, values=("☐",))
-                self.path_to_id[root] = dir_id
-                self.id_to_path[dir_id] = root
+                dir_item = QTreeWidgetItem([dir_name, "☐"])
+                parent_item.addChild(dir_item)
+                self.path_to_item[root] = dir_item
+                self.item_to_path[dir_item] = root
                 
                 for file in files:
-                    file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
+                    file_item = QTreeWidgetItem([file, "☐"])
+                    dir_item.addChild(file_item)
                     file_path = os.path.join(root, file)
-                    self.id_to_path[file_id] = file_path
+                    self.item_to_path[file_item] = file_path
                     
-                self.processed_items += len(files) + 1  # +1 for the directory
+                self.processed_items += len(files) + 1
                 progress = (self.processed_items / self.total_items) * 100
                 self.queue.put(('progress', progress))
                 self.queue.put(('status', f"Processed {self.processed_items} of {self.total_items} items"))
@@ -134,145 +125,94 @@ class DirectoryStructureApp:
 
     def process_queue(self):
         try:
-            while True:  # Process all available messages
+            while True:
                 msg_type, data = self.queue.get_nowait()
                 
                 if msg_type == 'progress':
                     self.update_progress(data)
                 elif msg_type == 'status':
-                    self.status_label.config(text=data)
+                    self.status_label.setText(data)
                 elif msg_type == 'done':
-                    self.status_frame.pack_forget()
+                    self.status_frame.hide()
+                    self.timer.stop()
                     return
                 
         except Exception:
-            self.root.after(100, self.process_queue)
+            pass
 
     def select_directory(self):
-        self.selected_directory = filedialog.askdirectory()
+        self.selected_directory = QFileDialog.getExistingDirectory(self)
         if self.selected_directory:
-            self.dir_label.config(text=f"Selected Directory: {self.selected_directory}")
+            self.dir_label.setText(f"Selected Directory: {self.selected_directory}")
             
-            # Reset
-            self.treeview.delete(*self.treeview.get_children())
-            self.path_to_id.clear()
-            self.id_to_path.clear()
+            self.tree.clear()
+            self.path_to_item.clear()
+            self.item_to_path.clear()
             
-            # Show progress frame
-            self.status_frame.pack(after=self.top_frame, fill=tk.X, pady=5)
+            self.status_frame.show()
             self.update_progress(0, "Initializing...")
             
-            # Start processing
             threading.Thread(target=self.process_directory, daemon=True).start()
-            self.root.after(100, self.process_queue)
+            self.timer.start(100)
         else:
-            messagebox.showwarning("Warning", "No directory was selected.")
+            QMessageBox.warning(self, "Warning", "No directory was selected.")
 
-    def toggle_check(self, event):
-        """Handles the checkbox toggle when clicking on an item"""
-        region = self.treeview.identify_region(event.x, event.y)
-        if region == "cell":
-            column = self.treeview.identify_column(event.x)
-            if column == "#1":  # Checkbox column
-                item = self.treeview.identify_row(event.y)
-                current_state = self.treeview.set(item, "Checked")
-                new_state = "☐" if current_state == "☑" else "☑"
-                self.treeview.set(item, "Checked", new_state)
-                
-                # Toggle all children
-                self.toggle_children(item, new_state)
-                # Update parent state
-                self.update_parent_state(self.treeview.parent(item))
+    def toggle_check(self, index):
+        item = self.tree.currentItem()
+        if item and index.column() == 1:
+            current_state = item.text(1)
+            new_state = "☐" if current_state == "☑" else "☑"
+            item.setText(1, new_state)
+            self.toggle_children(item, new_state)
+            self.update_parent_state(item.parent())
 
     def toggle_children(self, item, state):
-        """Recursively toggles all children of an item"""
-        children = self.treeview.get_children(item)
-        for child in children:
-            self.treeview.set(child, "Checked", state)
+        for i in range(item.childCount()):
+            child = item.child(i)
+            child.setText(1, state)
             self.toggle_children(child, state)
 
     def update_parent_state(self, parent):
-        """Updates parent checkbox based on children states"""
         if parent:
-            children = self.treeview.get_children(parent)
-            child_states = [self.treeview.set(child, "Checked") for child in children]
-            
+            child_states = [parent.child(i).text(1) for i in range(parent.childCount())]
             if all(state == "☑" for state in child_states):
-                self.treeview.set(parent, "Checked", "☑")
+                parent.setText(1, "☑")
             elif all(state == "☐" for state in child_states):
-                self.treeview.set(parent, "Checked", "☐")
+                parent.setText(1, "☐")
             else:
-                self.treeview.set(parent, "Checked", "☑")
-            
-            # Recursively update parent's parent
-            self.update_parent_state(self.treeview.parent(parent))
-
-    def populate_treeview(self):
-        """Populates the Treeview with the directory and file structure."""
-        self.treeview.delete(*self.treeview.get_children())
-        self.path_to_id.clear()
-        self.id_to_path.clear()
-        
-        # Insert root directory first
-        root_name = os.path.basename(self.selected_directory)
-        root_id = self.treeview.insert("", "end", text=root_name, open=True, values=("☐",))
-        self.path_to_id[self.selected_directory] = root_id
-        self.id_to_path[root_id] = self.selected_directory
-
-        # Walk through directory structure
-        for root, dirs, files in os.walk(self.selected_directory):
-            if root == self.selected_directory:
-                continue
-                
-            parent_path = os.path.dirname(root)
-            parent_id = self.path_to_id.get(parent_path)
-            
-            if parent_id is not None:
-                dir_name = os.path.basename(root)
-                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=True, values=("☐",))
-                self.path_to_id[root] = dir_id
-                self.id_to_path[dir_id] = root
-                
-                for file in files:
-                    file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
-                    file_path = os.path.join(root, file)
-                    self.id_to_path[file_id] = file_path
+                parent.setText(1, "☑")
+            self.update_parent_state(parent.parent())
 
     def get_checked_items(self):
-        """Returns a list of checked items with their full paths"""
         checked_items = []
         def collect_checked(item):
-            if self.treeview.set(item, "Checked") == "☑":
-                full_path = self.id_to_path.get(item)
-                if full_path:
-                    checked_items.append(full_path)
-            for child in self.treeview.get_children(item):
-                collect_checked(child)
+            if item.text(1) == "☑":
+                if item in self.item_to_path:
+                    checked_items.append(self.item_to_path[item])
+            for i in range(item.childCount()):
+                collect_checked(item.child(i))
         
-        for item in self.treeview.get_children():
-            collect_checked(item)
+        root = self.tree.topLevelItem(0)
+        if root:
+            collect_checked(root)
         return checked_items
 
     def generate_structure(self):
-        """Generates the formatted directory structure."""
         checked_paths = self.get_checked_items()
         if not checked_paths:
-            messagebox.showwarning("Warning", "No items were selected.")
+            QMessageBox.warning(self, "Warning", "No items were selected.")
             return
         
-        # Criar a estrutura inicial com o diretório raiz
         root_name = os.path.basename(self.selected_directory)
         directory_tree = {root_name: {}}
         
         for path in checked_paths:
-            # Get the relative path from the selected directory
             rel_path = os.path.relpath(path, self.selected_directory)
             parts = rel_path.split(os.sep)
             
-            # Create nested dictionary for this path, starting from the root
             current = directory_tree[root_name]
             for i, part in enumerate(parts):
-                if i == len(parts) - 1:  # Se for o último item
+                if i == len(parts) - 1:
                     if part not in current:
                         current[part] = {}
                 else:
@@ -281,11 +221,8 @@ class DirectoryStructureApp:
                     current = current[part]
         
         self.structure_text = self.format_structure(directory_tree)
-        self.text_area.config(state=tk.NORMAL)
-        self.text_area.delete("1.0", tk.END)
-        self.text_area.insert(tk.END, self.structure_text)
-        self.text_area.config(state=tk.DISABLED)
-        self.save_button.config(state=tk.NORMAL)
+        self.text_area.setPlainText(self.structure_text)
+        self.save_button.setEnabled(True)
 
     def format_structure(self, tree, indent=""):
         result = ""
@@ -301,15 +238,17 @@ class DirectoryStructureApp:
 
     def save_structure(self):
         if not self.structure_text:
-            messagebox.showerror("Error", "No structure generated to save.")
+            QMessageBox.critical(self, "Error", "No structure generated to save.")
             return
-        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Structure", "", "Text Files (*.txt)")
         if file_path:
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(self.structure_text)
-            messagebox.showinfo("Success", f"Structure saved to: {file_path}")
+            QMessageBox.information(self, "Success", f"Structure saved to: {file_path}")
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = DirectoryStructureApp(root)
-    root.mainloop()
+    import sys
+    app = QApplication(sys.argv)
+    window = DirectoryStructureApp()
+    window.show()
+    sys.exit(app.exec())
