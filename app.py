@@ -1,53 +1,172 @@
 import os
+import time
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import tkinter.scrolledtext as scrolledtext
+from queue import Queue
 
 class DirectoryStructureApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Directory Structure Generator")
         self.root.geometry("800x600")
-
-        # Main widgets
-        self.dir_label = tk.Label(self.root, text="No directory selected.", wraplength=700)
-        self.dir_label.pack(pady=10)
-
-        self.select_button = tk.Button(self.root, text="Select Directory", command=self.select_directory)
-        self.select_button.pack(pady=5)
-
-        self.tree_frame = tk.Frame(self.root)
-        self.tree_frame.pack(pady=10, fill=tk.BOTH, expand=True)
         
-        # Modified Treeview to include a checkbox column
+        # Container principal
+        self.main_container = tk.Frame(self.root)
+        self.main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Frame superior
+        self.top_frame = tk.Frame(self.main_container)
+        self.top_frame.pack(fill=tk.X)
+        
+        self.dir_label = tk.Label(self.top_frame, text="No directory selected.", wraplength=700)
+        self.dir_label.pack(side=tk.LEFT, pady=5)
+        
+        self.select_button = tk.Button(self.top_frame, text="Select Directory", command=self.select_directory)
+        self.select_button.pack(side=tk.RIGHT, pady=5)
+        
+        # Status frame com barra de progresso e label
+        self.status_frame = tk.Frame(self.main_container)
+        self.status_frame.pack(fill=tk.X, pady=5)
+        
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(self.status_frame, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill=tk.X, pady=5)
+        
+        self.status_label = tk.Label(self.status_frame, text="")
+        self.status_label.pack(fill=tk.X)
+        
+        # Ocultar frame de status inicialmente
+        self.status_frame.pack_forget()
+        
+        # Frame da árvore
+        self.tree_frame = tk.Frame(self.main_container)
+        self.tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
         self.treeview = ttk.Treeview(self.tree_frame, columns=("Checked"), selectmode="none")
         self.treeview.heading("#0", text="Name")
         self.treeview.heading("Checked", text="")
-        self.treeview.column("Checked", width=10, anchor="center")
-        self.treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
+        self.treeview.column("Checked", width=50, anchor="center")
+        self.treeview.column("#0", stretch=tk.YES)
+        
         self.tree_scroll = ttk.Scrollbar(self.tree_frame, orient="vertical", command=self.treeview.yview)
         self.treeview.configure(yscroll=self.tree_scroll.set)
+        
+        self.treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.generate_button = tk.Button(self.root, text="Generate Structure", command=self.generate_structure, state=tk.DISABLED)
+        
+        # Frame inferior
+        self.bottom_frame = tk.Frame(self.main_container)
+        self.bottom_frame.pack(fill=tk.X, pady=5)
+        
+        self.generate_button = tk.Button(self.bottom_frame, text="Generate Structure", 
+                                       command=self.generate_structure, state=tk.NORMAL)
         self.generate_button.pack(pady=5)
-
-        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, state=tk.DISABLED, height=15, width=70)
-        self.text_area.pack(expand=True, fill='both', pady=10)
-
-        self.save_button = tk.Button(self.root, text="Save Structure", command=self.save_structure, state=tk.DISABLED)
+        
+        self.text_area = tk.Text(self.bottom_frame, wrap=tk.WORD, state=tk.DISABLED, height=15)
+        self.text_area.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        self.save_button = tk.Button(self.bottom_frame, text="Save Structure", 
+                                   command=self.save_structure, state=tk.DISABLED)
         self.save_button.pack(pady=5)
-
+        
         self.selected_directory = None
         self.structure_text = None
-        self.path_to_id = {}  # Dictionary to store path-to-id mappings
-        self.id_to_path = {}  # New dictionary to store id-to-path mappings
+        self.path_to_id = {}
+        self.id_to_path = {}
+        self.total_items = 0
+        self.processed_items = 0
         
-        # Bind click event to handle checkboxes
         self.treeview.tag_configure('checked', image='')
         self.treeview.tag_configure('unchecked', image='')
         self.treeview.bind('<Button-1>', self.toggle_check)
+        
+        self.queue = Queue()
+
+    def update_progress(self, value, status_text=""):
+        self.progress_var.set(value)
+        if status_text:
+            self.status_label.config(text=status_text)
+        self.root.update_idletasks()
+
+    def count_items(self, directory):
+        total = 0
+        for _, dirs, files in os.walk(directory):
+            total += len(dirs) + len(files)
+        return total
+
+    def process_directory(self):
+        self.total_items = self.count_items(self.selected_directory)
+        self.processed_items = 0
+        self.queue.put(('status', f"Found {self.total_items} items to process"))
+        
+        root_name = os.path.basename(self.selected_directory)
+        root_id = self.treeview.insert("", "end", text=root_name, open=False, values=("☐",))
+        self.path_to_id[self.selected_directory] = root_id
+        self.id_to_path[root_id] = self.selected_directory
+
+        for root, dirs, files in os.walk(self.selected_directory):
+            if root == self.selected_directory:
+                continue
+                
+            parent_path = os.path.dirname(root)
+            parent_id = self.path_to_id.get(parent_path)
+            
+            if parent_id is not None:
+                dir_name = os.path.basename(root)
+                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=False, values=("☐",))
+                self.path_to_id[root] = dir_id
+                self.id_to_path[dir_id] = root
+                
+                for file in files:
+                    file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
+                    file_path = os.path.join(root, file)
+                    self.id_to_path[file_id] = file_path
+                    
+                self.processed_items += len(files) + 1  # +1 for the directory
+                progress = (self.processed_items / self.total_items) * 100
+                self.queue.put(('progress', progress))
+                self.queue.put(('status', f"Processed {self.processed_items} of {self.total_items} items"))
+                time.sleep(0.001)
+
+        self.queue.put(('done', None))
+
+    def process_queue(self):
+        try:
+            while True:  # Process all available messages
+                msg_type, data = self.queue.get_nowait()
+                
+                if msg_type == 'progress':
+                    self.update_progress(data)
+                elif msg_type == 'status':
+                    self.status_label.config(text=data)
+                elif msg_type == 'done':
+                    self.status_frame.pack_forget()
+                    return
+                
+        except Exception:
+            self.root.after(100, self.process_queue)
+
+    def select_directory(self):
+        self.selected_directory = filedialog.askdirectory()
+        if self.selected_directory:
+            self.dir_label.config(text=f"Selected Directory: {self.selected_directory}")
+            
+            # Reset
+            self.treeview.delete(*self.treeview.get_children())
+            self.path_to_id.clear()
+            self.id_to_path.clear()
+            
+            # Show progress frame
+            self.status_frame.pack(after=self.top_frame, fill=tk.X, pady=5)
+            self.update_progress(0, "Initializing...")
+            
+            # Start processing
+            threading.Thread(target=self.process_directory, daemon=True).start()
+            self.root.after(100, self.process_queue)
+        else:
+            messagebox.showwarning("Warning", "No directory was selected.")
 
     def toggle_check(self, event):
         """Handles the checkbox toggle when clicking on an item"""
@@ -87,16 +206,6 @@ class DirectoryStructureApp:
             
             # Recursively update parent's parent
             self.update_parent_state(self.treeview.parent(parent))
-
-    def select_directory(self):
-        """Allows the user to select a directory."""
-        self.selected_directory = filedialog.askdirectory()
-        if self.selected_directory:
-            self.dir_label.config(text=f"Selected Directory: {self.selected_directory}")
-            self.populate_treeview()
-            self.generate_button.config(state=tk.NORMAL)
-        else:
-            messagebox.showwarning("Warning", "No directory was selected.")
 
     def populate_treeview(self):
         """Populates the Treeview with the directory and file structure."""

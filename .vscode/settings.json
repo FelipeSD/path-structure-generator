@@ -1,0 +1,16 @@
+{
+    "files.exclude": {
+        "**/.venv": true,
+        "**/__pycache__": true,
+        "**/__init__.py": true
+    },
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "always"
+    },
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.mypy-type-checker",
+        "editor.formatOnSave": true,
+        "editor.rulers": [110]
+    }
+}
