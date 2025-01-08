@@ -88,34 +88,31 @@ class DirectoryStructureApp(QMainWindow):
         self.total_items = self.count_items(self.selected_directory)
         self.processed_items = 0
         self.queue.put(('status', f"Found {self.total_items} items to process"))
-        
+
         root_name = os.path.basename(self.selected_directory)
         root_item = QTreeWidgetItem([root_name, "☐"])
         self.tree.addTopLevelItem(root_item)
-        self.path_to_item[self.selected_directory] = root_item
-        self.item_to_path[root_item] = self.selected_directory
+        root_item.setData(0, Qt.ItemDataRole.UserRole, self.selected_directory)  # Store path in item
 
         for root, dirs, files in os.walk(self.selected_directory):
-            if root == self.selected_directory:
-                continue
-                
-            parent_path = os.path.dirname(root)
+            parent_path = root
             parent_item = self.path_to_item.get(parent_path)
-            
+
             if parent_item is not None:
-                dir_name = os.path.basename(root)
-                dir_item = QTreeWidgetItem([dir_name, "☐"])
-                parent_item.addChild(dir_item)
-                self.path_to_item[root] = dir_item
-                self.item_to_path[dir_item] = root
-                
-                for file in files:
-                    file_item = QTreeWidgetItem([file, "☐"])
-                    dir_item.addChild(file_item)
-                    file_path = os.path.join(root, file)
-                    self.item_to_path[file_item] = file_path
-                    
-                self.processed_items += len(files) + 1
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    dir_item = QTreeWidgetItem([dir_name, "☐"])
+                    parent_item.addChild(dir_item)
+                    dir_item.setData(0, Qt.ItemDataRole.UserRole, dir_path)  # Store path in item
+                    self.path_to_item[dir_path] = dir_item
+
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    file_item = QTreeWidgetItem([file_name, "☐"])
+                    parent_item.addChild(file_item)
+                    file_item.setData(0, Qt.ItemDataRole.UserRole, file_path)  # Store path in item
+
+                self.processed_items += len(dirs) + len(files)
                 progress = (self.processed_items / self.total_items) * 100
                 self.queue.put(('progress', progress))
                 self.queue.put(('status', f"Processed {self.processed_items} of {self.total_items} items"))
@@ -187,8 +184,9 @@ class DirectoryStructureApp(QMainWindow):
         checked_items = []
         def collect_checked(item):
             if item.text(1) == "☑":
-                if item in self.item_to_path:
-                    checked_items.append(self.item_to_path[item])
+                path = item.data(0, Qt.ItemDataRole.UserRole)  # Retrieve path from item
+                if path:
+                    checked_items.append(path)
             for i in range(item.childCount()):
                 collect_checked(item.child(i))
         
