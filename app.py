@@ -1,6 +1,7 @@
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import tkinter.scrolledtext as scrolledtext
 
 class DirectoryStructureApp:
     def __init__(self, root):
@@ -23,7 +24,6 @@ class DirectoryStructureApp:
         self.treeview.heading("#0", text="Name")
         self.treeview.heading("Checked", text="")
         self.treeview.column("Checked", width=10, anchor="center")
-        self.treeview.column("#0", stretch=tk.YES)
         self.treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.tree_scroll = ttk.Scrollbar(self.tree_frame, orient="vertical", command=self.treeview.yview)
@@ -33,8 +33,8 @@ class DirectoryStructureApp:
         self.generate_button = tk.Button(self.root, text="Generate Structure", command=self.generate_structure, state=tk.DISABLED)
         self.generate_button.pack(pady=5)
 
-        self.text_area = tk.Text(self.root, wrap=tk.WORD, state=tk.DISABLED, height=15, width=70)
-        self.text_area.pack(pady=10)
+        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, state=tk.DISABLED, height=15, width=70)
+        self.text_area.pack(expand=True, fill='both', pady=10)
 
         self.save_button = tk.Button(self.root, text="Save Structure", command=self.save_structure, state=tk.DISABLED)
         self.save_button.pack(pady=5)
@@ -178,7 +178,7 @@ class DirectoryStructureApp:
         self.text_area.config(state=tk.DISABLED)
         self.save_button.config(state=tk.NORMAL)
 
-    def format_structure(self, tree, indent="", last=False):
+    def format_structure(self, tree, indent=""):
         result = ""
         keys = list(tree.keys())
         for i, key in enumerate(keys):
@@ -187,7 +187,7 @@ class DirectoryStructureApp:
             spacer = "    " if is_last else "│   "
             result += f"{indent}{branch}{key}\n"
             if isinstance(tree[key], dict):
-                result += self.format_structure(tree[key], indent + spacer, last=is_last)
+                result += self.format_structure(tree[key], indent + spacer)
         return result
 
     def save_structure(self):
