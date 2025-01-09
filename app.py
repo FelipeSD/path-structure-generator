@@ -237,11 +237,52 @@ class DirectoryStructureApp:
                 return json.load(f)
         except FileNotFoundError:
             return {
-                'ignored_folders': [],
+                'ignored_folders': ["node_modules", ".venv", ".mypy_cache", ".git"],
                 'file_content_settings': {
                     'include_contents': False,
                     'max_file_size_kb': 100,
-                    'allowed_extensions': ['.txt', '.py', '.js', '.html', '.css', '.md', '.json', '.xml', '.yaml', '.yml']
+                    'allowed_extensions': [
+                        # Text and configuration files
+                        '.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.csv', '.ini', '.env', '.log',
+                        # Web development
+                        '.html', '.htm', '.css', '.scss', '.sass', '.less', '.js', '.ts', '.jsx', '.tsx', '.vue', '.j2',
+                        # Python and templates
+                        '.py', '.ipynb', '.pyc', '.pyo', '.pyd',
+                        # Java and related files
+                        '.java', '.jar', '.class', '.jsp',
+                        # C, C++ and related files
+                        '.c', '.cpp', '.h', '.hpp', '.cc', '.cxx', '.ino',
+                        # C# and .NET
+                        '.cs', '.csproj', '.vb', '.resx',
+                        # Ruby
+                        '.rb', '.erb', '.gemspec', '.rake',
+                        # PHP
+                        '.php', '.phtml', '.php3', '.php4', '.php5', '.phps',
+                        # Shell scripts and related files
+                        '.sh', '.bash', '.zsh', '.bat', '.cmd', '.ps1',
+                        # Go
+                        '.go',
+                        # Rust
+                        '.rs',
+                        # Swift
+                        '.swift',
+                        # Kotlin
+                        '.kt', '.kts',
+                        # Objective-C
+                        '.m', '.mm',
+                        # Dart and Flutter
+                        '.dart',
+                        # R
+                        '.r', '.rmd',
+                        # SQL and database files
+                        '.sql', '.db', '.sqlite', '.sqlite3', '.db3',
+                        # Other scripting languages
+                        '.pl', '.pm', '.t', '.lua',
+                        # Assembly and low-level
+                        '.asm', '.s', '.a', '.o',
+                        # Miscellaneous
+                        '.makefile', '.mk', '.cmake', '.gradle', '.gyp', '.gypi',
+                    ]
                 }
             }
 
@@ -256,11 +297,7 @@ class DirectoryStructureApp:
             self.settings = dialog.result
             self.ignored_folders = self.settings['ignored_folders']
             self.save_settings()
-            
-            # If directory is already loaded, refresh the view
-            if self.selected_directory:
-                self.populate_treeview()
-                
+
     def should_ignore_folder(self, folder_name):
         return folder_name in self.ignored_folders
     
@@ -314,21 +351,13 @@ class DirectoryStructureApp:
         self.total_items = self.count_items(self.selected_directory)
         self.processed_items = 0
         self.queue.put(('status', f"Found {self.total_items} items to process"))
-        
-        root_name = os.path.basename(self.selected_directory)
-        root_id = self.treeview.insert("", "end", text=root_name, open=False, values=("☐",))
-        self.path_to_id[self.selected_directory] = root_id
-        self.id_to_path[root_id] = self.selected_directory
 
         for root, dirs, files in os.walk(self.selected_directory):
             # Remove ignored folders from dirs list (modifies dirs in place)
             dirs[:] = [d for d in dirs if not self.should_ignore_folder(d)]
             
-            if root == self.selected_directory:
-                continue
-                
             parent_path = os.path.dirname(root)
-            parent_id = self.path_to_id.get(parent_path)
+            parent_id = self.path_to_id.get(parent_path) or ''
             
             if parent_id is not None:
                 dir_name = os.path.basename(root)
@@ -425,37 +454,6 @@ class DirectoryStructureApp:
             # Recursively update parent's parent
             self.update_parent_state(self.treeview.parent(parent))
 
-    def populate_treeview(self):
-        """Populates the Treeview with the directory and file structure."""
-        self.treeview.delete(*self.treeview.get_children())
-        self.path_to_id.clear()
-        self.id_to_path.clear()
-        
-        # Insert root directory first
-        root_name = os.path.basename(self.selected_directory)
-        root_id = self.treeview.insert("", "end", text=root_name, open=True, values=("☐",))
-        self.path_to_id[self.selected_directory] = root_id
-        self.id_to_path[root_id] = self.selected_directory
-
-        # Walk through directory structure
-        for root, dirs, files in os.walk(self.selected_directory):
-            if root == self.selected_directory:
-                continue
-                
-            parent_path = os.path.dirname(root)
-            parent_id = self.path_to_id.get(parent_path)
-            
-            if parent_id is not None:
-                dir_name = os.path.basename(root)
-                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=True, values=("☐",))
-                self.path_to_id[root] = dir_id
-                self.id_to_path[dir_id] = root
-                
-                for file in files:
-                    file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
-                    file_path = os.path.join(root, file)
-                    self.id_to_path[file_id] = file_path
-
     def get_checked_items(self):
         """Returns a list of checked items with their full paths"""
         checked_items = []
@@ -485,6 +483,10 @@ class DirectoryStructureApp:
         # Build the tree structure
         for path in checked_paths:
             rel_path = os.path.relpath(path, self.selected_directory)
+
+            if rel_path == '.': 
+                continue
+
             parts = rel_path.split(os.sep)
             
             current = directory_tree[root_name]
@@ -562,11 +564,11 @@ class DirectoryStructureApp:
             messagebox.showinfo("Success", f"Structure saved to: {file_path}")
 
     def copy_text(self, text_widget):
-        """Copy the content of a text widget to clipboard"""
-        self.clipboard_clear()
+        """Copy the content of the text widget to the clipboard."""
         text = text_widget.get("1.0", tk.END).strip()
         if text:
-            self.clipboard_append(text)
+            self.root.clipboard_clear()  # Clear the clipboard
+            self.root.clipboard_append(text)  # Append the text to the clipboard
             messagebox.showinfo("Success", "Text copied to clipboard!")
         else:
             messagebox.showwarning("Warning", "No text to copy!")
