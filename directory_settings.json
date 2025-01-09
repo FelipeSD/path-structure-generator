@@ -1,1 +1,1 @@
-{"ignored_folders": ["node_modules", ".venv", ".mypy_cache", ".git"]}
+{"ignored_folders": ["node_modules", ".venv", ".mypy_cache", ".git"], "file_content_settings": {"include_contents": true, "max_file_size_kb": 100, "allowed_extensions": [".txt", ".py", ".js", ".html", ".css", ".md", ".json", ".xml", ".yaml", ".yml", ".ts", ".j2"]}}
