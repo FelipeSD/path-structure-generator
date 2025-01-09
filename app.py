@@ -1,16 +1,95 @@
 import os
 import time
+import json
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import tkinter.scrolledtext as scrolledtext
 from queue import Queue
 
+
+class SettingsDialog(tk.Toplevel):
+    def __init__(self, parent, ignored_folders):
+        super().__init__(parent)
+        self.title("Settings")
+        self.geometry("400x500")
+        self.resizable(False, False)
+        
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Create main frame
+        main_frame = ttk.Frame(self, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Ignored folders list
+        ttk.Label(main_frame, text="Ignored Folders:").pack(anchor=tk.W)
+        
+        # Listbox with scrollbar
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
+        
+        self.listbox = tk.Listbox(list_frame, selectmode=tk.SINGLE)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
+        self.listbox.configure(yscrollcommand=scrollbar.set)
+        
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Populate listbox
+        for folder in ignored_folders:
+            self.listbox.insert(tk.END, folder)
+        
+        # Input frame
+        input_frame = ttk.Frame(main_frame)
+        input_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.folder_entry = ttk.Entry(input_frame)
+        self.folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        ttk.Button(input_frame, text="Add", command=self.add_folder).pack(side=tk.LEFT)
+        
+        # Buttons frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(button_frame, text="Remove Selected", command=self.remove_selected).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="Save", command=self.save_settings).pack(side=tk.RIGHT)
+        
+        self.result = None
+        
+    def add_folder(self):
+        folder = self.folder_entry.get().strip()
+        if folder:
+            self.listbox.insert(tk.END, folder)
+            self.folder_entry.delete(0, tk.END)
+            
+    def remove_selected(self):
+        selection = self.listbox.curselection()
+        if selection:
+            self.listbox.delete(selection)
+            
+    def save_settings(self):
+        self.result = list(self.listbox.get(0, tk.END))
+        self.destroy()
+
 class DirectoryStructureApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Directory Structure Generator")
         self.root.geometry("800x600")
+        
+        # Load settings
+        self.settings_file = "directory_settings.json"
+        self.ignored_folders = self.load_settings()
+        
+        # Add settings button to top frame
+        self.top_frame = tk.Frame(self.root)
+        self.top_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.settings_button = tk.Button(self.top_frame, text="Settings", command=self.show_settings)
+        self.settings_button.pack(side=tk.RIGHT, padx=5)
         
         # Container principal
         self.main_container = tk.Frame(self.root)
@@ -64,7 +143,7 @@ class DirectoryStructureApp:
                                        command=self.generate_structure, state=tk.NORMAL)
         self.generate_button.pack(pady=5)
         
-        self.text_area = tk.Text(self.bottom_frame, wrap=tk.WORD, state=tk.DISABLED, height=15)
+        self.text_area = scrolledtext.ScrolledText(self.bottom_frame, wrap=tk.WORD, state=tk.DISABLED, height=15)
         self.text_area.pack(fill=tk.BOTH, expand=True, pady=5)
         
         self.save_button = tk.Button(self.bottom_frame, text="Save Structure", 
@@ -84,6 +163,32 @@ class DirectoryStructureApp:
         
         self.queue = Queue()
 
+    def load_settings(self):
+        try:
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+                return settings.get('ignored_folders', [])
+        except FileNotFoundError:
+            return []
+            
+    def save_settings(self):
+        with open(self.settings_file, 'w') as f:
+            json.dump({'ignored_folders': self.ignored_folders}, f)
+            
+    def show_settings(self):
+        dialog = SettingsDialog(self.root, self.ignored_folders)
+        self.root.wait_window(dialog)
+        if dialog.result is not None:
+            self.ignored_folders = dialog.result
+            self.save_settings()
+            
+            # If directory is already loaded, refresh the view
+            if self.selected_directory:
+                self.populate_treeview()
+                
+    def should_ignore_folder(self, folder_name):
+        return folder_name in self.ignored_folders
+
     def update_progress(self, value, status_text=""):
         self.progress_var.set(value)
         if status_text:
@@ -93,6 +198,7 @@ class DirectoryStructureApp:
     def count_items(self, directory):
         total = 0
         for _, dirs, files in os.walk(directory):
+            dirs[:] = [d for d in dirs if not self.should_ignore_folder(d)]
             total += len(dirs) + len(files)
         return total
 
@@ -107,6 +213,9 @@ class DirectoryStructureApp:
         self.id_to_path[root_id] = self.selected_directory
 
         for root, dirs, files in os.walk(self.selected_directory):
+            # Remove ignored folders from dirs list (modifies dirs in place)
+            dirs[:] = [d for d in dirs if not self.should_ignore_folder(d)]
+            
             if root == self.selected_directory:
                 continue
                 
@@ -115,20 +224,21 @@ class DirectoryStructureApp:
             
             if parent_id is not None:
                 dir_name = os.path.basename(root)
-                dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=False, values=("☐",))
-                self.path_to_id[root] = dir_id
-                self.id_to_path[dir_id] = root
-                
-                for file in files:
-                    file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
-                    file_path = os.path.join(root, file)
-                    self.id_to_path[file_id] = file_path
+                if not self.should_ignore_folder(dir_name):
+                    dir_id = self.treeview.insert(parent_id, "end", text=dir_name, open=False, values=("☐",))
+                    self.path_to_id[root] = dir_id
+                    self.id_to_path[dir_id] = root
                     
-                self.processed_items += len(files) + 1  # +1 for the directory
-                progress = (self.processed_items / self.total_items) * 100
-                self.queue.put(('progress', progress))
-                self.queue.put(('status', f"Processed {self.processed_items} of {self.total_items} items"))
-                time.sleep(0.001)
+                    for file in files:
+                        file_id = self.treeview.insert(dir_id, "end", text=file, values=("☐",))
+                        file_path = os.path.join(root, file)
+                        self.id_to_path[file_id] = file_path
+                        
+                    self.processed_items += len(files) + 1
+                    progress = (self.processed_items / self.total_items) * 100
+                    self.queue.put(('progress', progress))
+                    self.queue.put(('status', f"Processed {self.processed_items} of {self.total_items} items"))
+                    time.sleep(0.001)
 
         self.queue.put(('done', None))
 
