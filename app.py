@@ -144,35 +144,31 @@ class DirectoryStructureApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Directory Structure Generator")
-        self.root.geometry("800x600")
+        self.root.geometry("800x650")
         
         # Load settings
         self.settings_file = "directory_settings.json"
         self.settings = self.load_settings()
         self.ignored_folders = self.settings.get('ignored_folders', [])
-
-        # Add settings button to top frame
-        self.top_frame = tk.Frame(self.root)
-        self.top_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.settings_button = tk.Button(self.top_frame, text="Settings", command=self.show_settings)
-        self.settings_button.pack(side=tk.RIGHT, padx=5)
         
         # Container principal
         self.main_container = tk.Frame(self.root)
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # Frame superior
+        # Top frame with directory selection and settings
         self.top_frame = tk.Frame(self.main_container)
-        self.top_frame.pack(fill=tk.X)
+        self.top_frame.pack(fill=tk.X, pady=5)
         
         self.dir_label = tk.Label(self.top_frame, text="No directory selected.", wraplength=700)
-        self.dir_label.pack(side=tk.LEFT, pady=5)
+        self.dir_label.pack(side=tk.LEFT)
+        
+        self.settings_button = tk.Button(self.top_frame, text="Settings", command=self.show_settings)
+        self.settings_button.pack(side=tk.RIGHT, padx=5)
         
         self.select_button = tk.Button(self.top_frame, text="Select Directory", command=self.select_directory)
-        self.select_button.pack(side=tk.RIGHT, pady=5)
+        self.select_button.pack(side=tk.RIGHT, padx=5)
         
-        # Status frame com barra de progresso e label
+        # Status frame with progress bar
         self.status_frame = tk.Frame(self.main_container)
         self.status_frame.pack(fill=tk.X, pady=5)
         
@@ -215,7 +211,12 @@ class DirectoryStructureApp:
         
         self.save_button = tk.Button(self.bottom_frame, text="Save Structure", 
                                    command=self.save_structure, state=tk.DISABLED)
-        self.save_button.pack(pady=5)
+        self.save_button.pack(side=tk.RIGHT, padx=5)
+
+        self.copy_button = tk.Button(self.bottom_frame, text="Copy", 
+                                   command=lambda: self.copy_text(self.text_area), state=tk.DISABLED)
+        self.copy_button.pack(pady=5)
+        self.copy_button.pack(side=tk.RIGHT, padx=5)
         
         self.selected_directory = None
         self.structure_text = None
@@ -514,6 +515,7 @@ class DirectoryStructureApp:
         self.text_area.insert(tk.END, self.structure_text)
         self.text_area.config(state=tk.DISABLED)
         self.save_button.config(state=tk.NORMAL)
+        self.copy_button.config(state=tk.NORMAL)
 
     def format_structure(self, tree, indent="", include_content=True):
         """Formats the directory structure and returns tuple of (structure, content)"""
@@ -558,6 +560,16 @@ class DirectoryStructureApp:
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(self.structure_text)
             messagebox.showinfo("Success", f"Structure saved to: {file_path}")
+
+    def copy_text(self, text_widget):
+        """Copy the content of a text widget to clipboard"""
+        self.clipboard_clear()
+        text = text_widget.get("1.0", tk.END).strip()
+        if text:
+            self.clipboard_append(text)
+            messagebox.showinfo("Success", "Text copied to clipboard!")
+        else:
+            messagebox.showwarning("Warning", "No text to copy!")
 
 if __name__ == "__main__":
     root = tk.Tk()
